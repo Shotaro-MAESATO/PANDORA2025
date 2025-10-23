@@ -1,0 +1,18 @@
+# gomi root
+*.root
+
+#conflict
+artemis/
+root/
+taro/
+ridf/
+
+# Link
+rawdata
+ridf
+ridf_d202510a
+root_file_sakra
+
+
+# emacs backup
+*~

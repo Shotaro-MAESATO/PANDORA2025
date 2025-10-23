@@ -1,0 +1,9 @@
+{ decls }
+namespace std {  }
+
+[ libMyclass ]
+# List of selected classes
+class vector<vector<double> >
+class vector<vector<int> >
+class vector<vector<uint16_t> >
+class vector<vector<unsigned short> >
