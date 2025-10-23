@@ -1,13 +1,13 @@
 # gomi root
 *.root
 
-#conflict
+# Coflict
 artemis/
 root/
 taro/
 ridf/
 
-# Link
+# Rawdata Symbolic Link
 rawdata
 ridf
 ridf_d202510a
@@ -16,3 +16,8 @@ root_file_sakra
 
 # emacs backup
 *~
+
+# Binary File
+ana_sakra
+deco.mpv
+deco.mpv_FIRfilter
