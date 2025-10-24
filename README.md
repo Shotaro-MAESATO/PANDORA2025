@@ -1,11 +1,13 @@
 # For PANDORA2025
 
-root version 6.32.06
+**ROOT version:** 6.32.06
+
+If you have saho account, you can decode the data as follows:
 
 ```bash
-$ git clone https://github.com/Shotaro-MAESATO/PANDORA2025.git
-$ ln -sf /np1a/v05/pandora/2025aug/d202510a/sakra/ridf_file ridf
-$ mkdir root
-$ ./deco.mpv ridf/run0120.ridf root/run0120.root
-$ root root/run0120.root
+git clone https://github.com/Shotaro-MAESATO/PANDORA2025.git
+ln -sf /np1a/v05/pandora/2025aug/d202510a/sakra/ridf_file ridf
+mkdir root
+./deco.mpv ridf/run0120.ridf root/run0120.root
+root root/run0120.root
 ```
