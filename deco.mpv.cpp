@@ -33,13 +33,13 @@ using namespace std;
 
 // DAQ SETUP
 //v1730 config
-#define N_FADC_BOARD 4
+#define N_FADC_BOARD 5
 #define RECORD_LENGTH 800
 #define N_CH 16
 
 //MADC config
 #define N_MADC 1
-//#define MADC_CH 32
+#define MADC_CH 32
 
 // v1190 config
 // #define N_v1190 1
@@ -48,8 +48,6 @@ using namespace std;
 
 //SIS3820 config
 #define SIS3820_ch 32
-
-
 
 
 enum RIDF_CID{
@@ -249,7 +247,7 @@ typedef struct{
     char comment[200];
 } RunInfo;
 
-int nch[N_FADC_BOARD]={16,16,16,16};
+int nch[N_FADC_BOARD]={16,16,16,16,16};
 uint32_t v1730_header[4];
 uint32_t v1730_ch_header;
 uint64_t trigger_time_tag[N_FADC_BOARD];
@@ -286,8 +284,8 @@ uint64_t TTT_V1730_rev[N_FADC_BOARD];
 // Trigger time tags for event matching
 
 // MADC 
-double Energy_MADC[N_MADC*32];
-int MADC[N_MADC*32];
+double Energy_MADC[N_MADC][MADC_CH];
+int MADC[N_MADC][MADC_CH];
 uint64_t Extended_TS[N_MADC]={};
 uint64_t TTT_MADC[N_MADC]={};
 uint32_t TTT_MADC_pre[N_MADC]={};
@@ -319,7 +317,7 @@ uint32_t SIS3820_scaler[SIS3820_ch];
 
 
 //MADC
-TH2D* adc = new TH2D("adc","adc",16,16,32,2048,108,8300);
+//TH2D* adc = new TH2D("adc","adc",16,16,32,2048,108,8300);
 //TH2D* adc = new TH2D("adc","adc",16,16,32,2048,0,8192);
 #include "DigitalFilter.cpp"
 
@@ -485,7 +483,7 @@ int main(int argc, char *argv[]){
   tree->SetMaxTreeSize(1000000000000LL);
   
 
-  tree->SetAutoSave(500000000); // 500 MBごとに自動保存
+  tree->SetAutoSave(500000000); // 500 MB save
   tree->SetAutoFlush(10000); 
   /*
   tree->SetAutoSave(5000);
@@ -497,7 +495,8 @@ int main(int argc, char *argv[]){
   sprintf(bnam,"TTT_V1190/i");
   tree->Branch("TTT_V1190",&TTT_V1190,bnam);
   tree->Branch("V1190hit",V1190hit,"V1190hit[128]/I");
-  
+
+  // v1730
   sprintf(bnam,"TTT[%d]/l",N_FADC_BOARD);
   tree->Branch("TTT",trigger_time_tag,bnam);  
   sprintf(bnam,"TTT_pre[%d]/l",N_FADC_BOARD);
@@ -527,9 +526,9 @@ int main(int argc, char *argv[]){
   
   
   // MADC
-  sprintf(bnam,"MADC[%d]/I",N_MADC*32);
+  sprintf(bnam,"MADC[%d][%d]/I",N_MADC,32);
   tree->Branch("MADC",MADC,bnam);
-  sprintf(bnam,"Energy_MADC[%d]/D",N_MADC*32);
+  sprintf(bnam,"Energy_MADC[%d][%d]/D",N_MADC,32);
   tree->Branch("Energy_MADC",Energy_MADC,bnam);
   sprintf(bnam,"TTT_MADC[%d]/l",N_MADC);
   tree->Branch("TTT_MADC",TTT_MADC,bnam);
@@ -556,15 +555,21 @@ int main(int argc, char *argv[]){
       waveform[i][j]=new TH2D(hnam,hnam,RECORD_LENGTH/4,0,RECORD_LENGTH,1024,0,16384);
     }
   }
-  ADC_ch = new TH2D("fadc_ch","FADC_ch",48,0,48,1024,0,16384); //20240703s
+  int fadc_ch_all;
+  fadc_ch_all = N_FADC_BOARD * N_CH;
+  ADC_ch = new TH2D("fadc","FADC vs ch",fadc_ch_all,0,fadc_ch_all,1024,0,16384); //20240703s
   
   //MADC
-  TH1D *MADC_hist[32];
-  for(int i=0;i<32;i++){
-    sprintf(hnam,"madc%d",i);
-    MADC_hist[i]=new TH1D(hnam,hnam,4096,0,8192); //MADC 8K Reso
-    //MADC_hist[i]=new TH1D(hnam,hnam,200,100,4100);
+  TH2D* MADCvsCH[N_MADC];
+  for (int i = 0; i < N_MADC; i++){
+    MADCvsCH[i] = new TH2D(Form("madc%d",i),Form("madc%d vs ch",i),32,0,32,8192,0,8192);
   }
+  //H1D *MADC_hist[32];
+  //or(int i=0;i<32;i++){
+  // sprintf(hnam,"madc%d",i);
+  // MADC_hist[i]=new TH1D(hnam,hnam,4096,0,8192); //MADC 8K Reso
+  // //MADC_hist[i]=new TH1D(hnam,hnam,200,100,4100);
+  //}
   TH2D* pid_1st[16];
   for(int i=0; i<16; i++){
     pid_1st[i] = new TH2D(Form("hpid_1st_ch%d", i), Form("Amax vs Energy ch%d", i),
@@ -636,15 +641,15 @@ TTT_V1190=0;
 for(int i=0;i<128;++i) V1190hit[i]=0;
 
 // MADC
-for(int i=0;i<32*N_MADC;++i){
-  MADC[i]=-1;
-  Energy_MADC[i]=-1;
-}
 for(int i=0;i<N_MADC;++i){
   TimeMADC_pre[i]=TimeMADC[i];
   TimeMADC[i]=0;
   TTT_MADC[i]=0;
   TTT_MADC_rev[i]=0;
+  for(int j=0;j<MADC_CH;++j){
+    MADC[i][j]=-1;
+    Energy_MADC[i][j]=-1;
+  }
 }
 
 //SIS3820
@@ -796,16 +801,15 @@ switch(seg_id.Module){
         printf("Invalid Data word (MADC) : blkn=%d evtn=%d word=%d\n",blkn,evtn,i);
       }
       if(subheader==0){
-        int ch=((buff[i]>>16) & 0x1F)+ (N_MADC-1)*32;
-        MADC[ch]=(buff[i]&0x1FFF);
+        int ch=((buff[i]>>16) & 0x1F);
+        MADC[board][ch]=(buff[i]&0x1FFF);
         if((buff[i]>>14) & 0x1){
-          MADC[ch]=-1;
+          MADC[board][ch]=-1;
         }
-        adc->Fill(ch,MADC[ch]);
-        MADC_hist[ch]->Fill(MADC[ch]);
-        Energy_MADC[ch]=(GetSlope(calibpar2, 0, ch)*MADC[ch])+GetInterSection(calibpar2, 0, ch);
-        
-        
+	//        adc->Fill(ch,MADC[board][ch]);
+	//        MADC_hist[ch]->Fill(MADC[board][ch]);
+        MADCvsCH[board]->Fill(ch,MADC[board][ch]);
+        Energy_MADC[board][ch]=(GetSlope(calibpar2, 0, ch)*MADC[board][ch])+GetInterSection(calibpar2, 0, ch);
       }
       else if(subheader==1){
         Extended_TS[board] = (uint64_t)((buff[i]&0xffff)<<30);
@@ -828,13 +832,13 @@ switch(seg_id.Module){
     printf("Invalid Event Header (MADC) : blkn=%d evtn=%d\n",blkn,evtn);
     int k = 0;
     while(sig == 0){
-      int ch=((buff[k]>>16) & 0x1F)+ (N_MADC-1)*32;
-      MADC[ch]=(buff[k]&0x1FFF);
-      adc->Fill(ch,MADC[ch]);
-      MADC_hist[ch]->Fill(MADC[ch]);
-      Energy_MADC[ch]=(GetSlope(calibpar2, 0, ch)*MADC[ch])+GetInterSection(calibpar2, 0, ch);
+      int ch=((buff[k]>>16) & 0x1F);
+      MADC[board][ch]=(buff[k]&0x1FFF);
+      //      adc->Fill(ch,MADC[ch]);
+      // MADC_hist[ch]->Fill(MADC[ch]);
+      //Energy_MADC[board][ch]=(GetSlope(calibpar2, 0, ch)*MADC[ch])+GetInterSection(calibpar2, 0, ch);
       if((buff[k]>>14) & 0x1){ //out of renge
-        MADC[ch]=-1;
+        MADC[board][ch]=-1;
       }
       k++;
       sig=buff[k]>>30;
@@ -1064,9 +1068,8 @@ for(int i=0;i<N_FADC_BOARD;i++){
 ADC_ch->Write();
 
 //MADC
-adc->Write();
-for(int i=0;i<32;i++){
-  MADC_hist[i]->Write();
+for(int i=0;i<N_MADC;i++){
+  MADCvsCH[board]->Write();
 }
 for (int i = 0; i < 16; ++i) {
   pid_1st[i]->Write(); 
