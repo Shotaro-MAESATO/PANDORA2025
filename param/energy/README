@@ -1,10 +1,10 @@
 ################
 Calib Fomula
-y = ax + b
+[Energy] = a0 + a1*[ADC]
 
 
 Calib  text
-Board ch b a
+Board ch a0 a1
 
 
 
