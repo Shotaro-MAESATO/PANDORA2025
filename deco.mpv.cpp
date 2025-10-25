@@ -38,16 +38,19 @@ using namespace std;
 #define N_CH 16
 
 //MADC config
-#define N_MADC 1
+#define N_MADC 6
 #define MADC_CH 32
 
 // v1190 config
-// #define N_v1190 1
-// #define v1190_ch 124
+#define N_V1190 2
+#define V1190_CH 128
 
 
 //SIS3820 config
-#define SIS3820_ch 32
+#define SIS3820_CH 32
+
+// MPV Config
+#define N_MPV 2
 
 
 enum RIDF_CID{
@@ -272,9 +275,10 @@ int RiseEdge[N_FADC_BOARD][N_CH];
 int ADC_sum[N_FADC_BOARD][N_CH];
 int adc_sum[N_FADC_BOARD][N_CH];
 
-vector<vector<int>> TDC(128,vector<int>(1,0));
-uint32_t TTT_V1190;
-uint32_t V1190hit[128];
+const int V1190_total_ch = N_V1190 * V1190_CH;
+vector<vector<int>> TDC(V1190_total_ch,vector<int>(1,0));
+uint32_t TTT_V1190[N_V1190];
+uint32_t V1190hit[V1190_total_ch];
 
 // Trigger time tags for event matching 2021/06/2
 uint64_t TTT_V1730_rev[N_FADC_BOARD];
@@ -306,14 +310,14 @@ TH2D* ADC_ch;                //20240703
 
 double Amax[N_FADC_BOARD][N_CH];
 //MPV
-uint64_t MPV_TS ;
-uint64_t high16 ;
-uint64_t low32 ;
-int MPV_10kclk ;
-int MPV_evtn ;
+uint64_t MPV_TS[N_MPV] ;
+uint64_t high16[N_MPV] ;
+uint64_t low32[N_MPV] ;
+int MPV_10kclk[N_MPV] ;
+int MPV_evtn[N_MPV] ;
 
 // Scaler
-uint32_t SIS3820_scaler[SIS3820_ch];
+uint32_t SIS3820_scaler[SIS3820_CH];
 
 
 //MADC
@@ -494,13 +498,13 @@ int main(int argc, char *argv[]){
   tree->Branch("TDC","std::vector<std::vector<int>>",&TDC);
   sprintf(bnam,"TTT_V1190/i");
   tree->Branch("TTT_V1190",&TTT_V1190,bnam);
-  tree->Branch("V1190hit",V1190hit,"V1190hit[128]/I");
+  tree->Branch("V1190hit",V1190hit,Form("V1190hit[%d]/I",V1190_total_ch));
 
   // v1730
   sprintf(bnam,"TTT[%d]/l",N_FADC_BOARD);
   tree->Branch("TTT",trigger_time_tag,bnam);  
-  sprintf(bnam,"TTT_pre[%d]/l",N_FADC_BOARD);
-  tree->Branch("TTT_pre",trigger_time_tag_pre,bnam);  
+  // sprintf(bnam,"TTT_pre[%d]/l",N_FADC_BOARD);
+  // tree->Branch("TTT_pre",trigger_time_tag_pre,bnam);  
   sprintf(bnam,"baseline[%d][%d]/I",N_FADC_BOARD,N_CH);
   tree->Branch("baseline",baseline,bnam);
   sprintf(bnam,"baseline_ave[%d][%d]/D",N_FADC_BOARD,N_CH);
@@ -538,11 +542,11 @@ int main(int argc, char *argv[]){
   //tree->Branch("TTT_MADC_r",TTT_MADC_rev,bnam);
 
   // Scaler
-  sprintf(bnam,"SIS3820_scaler[%d]/i",SIS3820_ch);
+  sprintf(bnam,"SIS3820_scaler[%d]/i",SIS3820_CH);
   tree->Branch("SIS3820_scaler",SIS3820_scaler,bnam);
   
   //MPV
-  tree->Branch("MPV_TS",&MPV_TS,"MPV_TS/l");
+  tree->Branch("MPV_TS",MPV_TS,Form("MPV_TS[%d]/l",N_MPV));
   
   
   for(int i=0;i<N_FADC_BOARD;++i) tree->Branch(Form("rawdata_%d",i),"std::vector<std::vector<uint16_t>>",&fadc_raw_data[i]);
@@ -636,9 +640,9 @@ int main(int argc, char *argv[]){
   evt_stored=false;
 }
 /***************** Data initialization *****************/
-for(int i=0;i<128;++i) TDC[i].clear();
-TTT_V1190=0;
-for(int i=0;i<128;++i) V1190hit[i]=0;
+for(int i=0;i<V1190_total_ch;++i) TDC[i].clear();
+for (int i = 0; i < N_V1190; i++)TTT_V1190[i]=0;
+for(int i=0;i<V1190_total_ch;++i) V1190hit[i]=0;
 
 // MADC
 for(int i=0;i<N_MADC;++i){
@@ -653,7 +657,16 @@ for(int i=0;i<N_MADC;++i){
 }
 
 //SIS3820
-for(int i=0;i<SIS3820_ch;++i) SIS3820_scaler[i]=0;
+for(int i=0;i<SIS3820_CH;++i) SIS3820_scaler[i]=0;
+
+// MPV
+for (int i = 0; i < N_MPV; i++){
+  MPV_TS[N_MPV] = 0;
+  high16[N_MPV] = 0 ;
+  low32[N_MPV] = 0 ;
+  MPV_10kclk[N_MPV] = 0;
+  MPV_evtn[N_MPV] = 0;
+}
 
 
 for(int board=0;board<N_FADC_BOARD;++board){
@@ -736,8 +749,9 @@ switch(seg_id.Module){
   uint32_t tmpbuf;
   int evtcnt,geo;
   int error_flag;
-  int ch;
   while(bp<datasize){
+    int ch;
+    int tmp_ch;
     tmpbuf=buff[bp++];
     if((tmpbuf>>27) == 0x8){ /** Global Header **/
       evtcnt=(tmpbuf&0x07FFFFE0)>>5;
@@ -765,7 +779,8 @@ switch(seg_id.Module){
             printf("V1190 TDC %d : Error flag 0x%x\n",i,error_flag);
           }
           if((tmpbuf>>27)==0x0){ /** TDC fadc_raw_data **/
-            ch=(tmpbuf&0x03F80000)>>19;
+            tmp_ch=(tmpbuf&0x03F80000)>>19;
+            ch = tmp_ch + board * V1190_CH;
             TDC[ch].push_back(tmpbuf&0x0007FFF);
             V1190hit[ch]+=1;
           }
@@ -778,10 +793,10 @@ switch(seg_id.Module){
     while(bp<datasize){
       tmpbuf=buff[bp++];
       if((tmpbuf>>27)==0x11){ /** Extended Trigger Time Tag **/
-        TTT_V1190=TTT_V1190|((tmpbuf&0x07FFFFFF)<<5);
+        TTT_V1190[board]=TTT_V1190[board]|((tmpbuf&0x07FFFFFF)<<5);
       }
       if((tmpbuf>>27)==0x10){ /** Global Trailer **/
-        TTT_V1190=TTT_V1190|(tmpbuf&0x1F);
+        TTT_V1190[board]=TTT_V1190[board]|(tmpbuf&0x1F);
       }
     }
   }
@@ -913,7 +928,6 @@ switch(seg_id.Module){
     // comment out shaping filter for a while 2021/06/25 22:27 M. Murata
     // data_fil[board][ch]=shaping_filter(data_fil[board][ch],3); // shaper
     
-    
     for(int i=0;i<(int)fadc_raw_data[board][ch].size();i++){
       if(fadc_raw_data[board][ch][i]==0) continue;
       waveform[board][ch]->Fill(i,fadc_raw_data[board][ch][i],1.);
@@ -955,11 +969,11 @@ switch(seg_id.Module){
   break;
   
   case MPV: //mpv TS fadc_raw_data
-  high16 = (uint64_t)((buff[0] & 0x0000ffff)) << 32;
-  low32  = (uint64_t)(buff[1] & 0xffffffff);
-  MPV_TS = high16 | low32;
-  MPV_10kclk = buff[2];
-  MPV_evtn = buff[3];
+  high16[board] = (uint64_t)((buff[0] & 0x0000ffff)) << 32;
+  low32[board]  = (uint64_t)(buff[1] & 0xffffffff);
+  MPV_TS[board] = high16[board] | low32[board];
+  MPV_10kclk[board] = buff[2];
+  MPV_evtn[board] = buff[3];
   break;
   
 }
@@ -1069,7 +1083,7 @@ ADC_ch->Write();
 
 //MADC
 for(int i=0;i<N_MADC;i++){
-  MADCvsCH[board]->Write();
+  MADCvsCH[i]->Write();
 }
 for (int i = 0; i < 16; ++i) {
   pid_1st[i]->Write(); 
