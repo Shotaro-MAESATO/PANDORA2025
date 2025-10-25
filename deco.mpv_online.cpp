@@ -16,7 +16,8 @@
 #include <TFile.h>
 #include <TTree.h>
 #include <TH2D.h>
-
+#include <THttpServer.h>
+#include <TSystem.h>
 #include "segidlist.h"
 #include "MyclassDict.cpp"
 
@@ -51,6 +52,11 @@ using namespace std;
 
 // MPV Config
 #define N_MPV 2
+
+/** ROOT Online Server **/
+int portnum = 8000;
+int use_http = 0;
+THttpServer* serv;
 
 
 enum RIDF_CID{
@@ -455,8 +461,17 @@ int main(int argc, char *argv[]){
       cout << "Amax fillter on" << endl;
     }
   }
+  /* For ROOT Online Server*/
+  for(int i=0; i<argc; i++){
+    if(strstr(argv[i], "-port") != NULL){
+      use_http = 1;
+      portnum = atoi(argv[i+1]);
+      cout << "port num:" << portnum << endl;
+    }
+  }
+  if (use_http == 1) THttpServer* serv = new THttpServer(Form("http:%d?thrds=2;rw", portnum));
 
-  if(argc>=5){
+  if(argc>=7){
     evt_stop=atoi(argv[4]);
   }
   
@@ -584,7 +599,8 @@ int main(int argc, char *argv[]){
   
   
   TrigTimeTags ttts;
-  while(!fin.eof()){
+  // while(!fin.eof()){
+  while(!gSystem->ProcessEvents()){
     fin.read((char*)buf_header, sizeof(buf_header));
     cid= (buf_header[0] & 0x0FC00000) >> 22;
     blksize= buf_header[0] & 0x003FFFFF; //2 byte
