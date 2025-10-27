@@ -976,8 +976,8 @@ switch(seg_id.Module){
   break;
   
   case MPV: //mpv TS fadc_raw_data
-  high16[board] = (uint64_t)((buff[0] & 0x0000ffff)) << 32;
-  low32[board]  = (uint64_t)(buff[1] & 0xffffffff);
+  high16[board] = (uint64_t)((buff[1] & 0x0000ffff)) << 32;
+  low32[board]  = (uint64_t)(buff[0] & 0xffffffff);
   MPV_TS[board] = high16[board] | low32[board];
   MPV_10kclk[board] = buff[2];
   MPV_evtn[board] = buff[3];

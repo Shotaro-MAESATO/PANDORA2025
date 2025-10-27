@@ -1,7 +1,7 @@
 GCC = g++ -std=c++17 -O3
 #TARGET = deco.mpv_FIRfilter
-#TARGET = deco.mpv
-TARGET = deco.mpv_online
+TARGET = deco.mpv
+#TARGET = deco.mpv_online
 OBJ = $(TARGET).o
 CLASSOBJ = MyclassDict.o
 ROOTFLAGS = $(shell root-config --cflags)
