@@ -198,6 +198,10 @@ std::string GetParameterFileForRunNo(int _run_no){
   return "param/energy/FADC.prm";
 }
 
+// std::string GetParameterFileForRunNo(int Board){
+//   return Form("param/energy/FADC_%d.prm", Board);
+// }
+
 // MADC calibration file
   std::string GetParameterFile2ForRunNo(int _run_no){
     return "param/energy/MADC.prm";
@@ -536,10 +540,7 @@ int main(int argc, char *argv[]){
   tree->Branch("Energy_MADC",Energy_MADC,bnam);
   sprintf(bnam,"TTT_MADC[%d]/l",N_MADC);
   tree->Branch("TTT_MADC",TTT_MADC,bnam);
-  //sprintf(bnam,"TTT_MADC_pre[%d]/i",N_MADC);
-  //tree->Branch("TTT_MADC_pre",TTT_MADC_pre,bnam);
-  //sprintf(bnam,"TTT_MADC_r[%d]/l",N_MADC);
-  //tree->Branch("TTT_MADC_r",TTT_MADC_rev,bnam);
+
 
   // Scaler
   sprintf(bnam,"SIS3820_scaler[%d]/i",SIS3820_CH);
@@ -568,12 +569,7 @@ int main(int argc, char *argv[]){
   for (int i = 0; i < N_MADC; i++){
     MADCvsCH[i] = new TH2D(Form("madc%d",i),Form("madc%d vs ch",i),32,0,32,8192,0,8192);
   }
-  //H1D *MADC_hist[32];
-  //or(int i=0;i<32;i++){
-  // sprintf(hnam,"madc%d",i);
-  // MADC_hist[i]=new TH1D(hnam,hnam,4096,0,8192); //MADC 8K Reso
-  // //MADC_hist[i]=new TH1D(hnam,hnam,200,100,4100);
-  //}
+
   TH2D* pid_1st[16];
   for(int i=0; i<16; i++){
     pid_1st[i] = new TH2D(Form("hpid_1st_ch%d", i), Form("Amax vs Energy ch%d", i),
@@ -641,6 +637,7 @@ int main(int argc, char *argv[]){
 }
 /***************** Data initialization *****************/
 for(int i=0;i<V1190_total_ch;++i) TDC[i].clear();
+// for(int i=0;i<V1190_total_ch;++i) TDC[i].assign(1, -1e6); ;
 for (int i = 0; i < N_V1190; i++)TTT_V1190[i]=0;
 for(int i=0;i<V1190_total_ch;++i) V1190hit[i]=0;
 
@@ -799,6 +796,8 @@ switch(seg_id.Module){
         TTT_V1190[board]=TTT_V1190[board]|(tmpbuf&0x1F);
       }
     }
+    // tdc analysis
+    
   }
   break;
   
@@ -813,9 +812,9 @@ switch(seg_id.Module){
       int subheader;
       subheader=(buff[i]&0x00800000)>>23;
       if(sig!=0){
-        printf("Invalid Data word (MADC) : blkn=%d evtn=%d word=%d\n",blkn,evtn,i);
+      // printf("Invalid Data word (MADC) : blkn=%d evtn=%d word=%d\n",blkn,evtn,i);
 	if(sig==3){
-	  cout << "This Word is Ender" <<endl;
+	  // cout << "This Word is Ender" <<endl;
 	  int correct_nword = i;
 	  nword = correct_nword;
 	  break;
@@ -827,10 +826,9 @@ switch(seg_id.Module){
         if((buff[i]>>14) & 0x1){
           MADC[board][ch]=-1;
         }
-	//        adc->Fill(ch,MADC[board][ch]);
-	//        MADC_hist[ch]->Fill(MADC[board][ch]);
+
         MADCvsCH[board]->Fill(ch,MADC[board][ch]);
-        Energy_MADC[board][ch]=(GetSlope(calibpar2, 0, ch)*MADC[board][ch])+GetInterSection(calibpar2, 0, ch);
+        Energy_MADC[board][ch]=(GetSlope(calibpar2, board, ch)*MADC[board][ch])+GetInterSection(calibpar2, board, ch);
       }
       else if(subheader==1){
         Extended_TS[board] = (uint64_t)((buff[i]&0xffff)<<30);
@@ -845,8 +843,7 @@ switch(seg_id.Module){
 
     MADC_TS[board]=(buff[nword]&0x3FFFFFFF);
     TTT_MADC[board]= Extended_TS[board] | MADC_TS[board];
-    //TTT_MADC[board]=(buff[nword]&0x3FFFFFFF);
-    //TTT_MADC_rev[board]=TTT_MADC[board]; // copy
+
   }
 
   // Extended time Stamp enable to decode when Invalid Header come
@@ -1055,25 +1052,7 @@ if(quit_flag) break;
 }
 
 cout << endl;
-/*
-if(evt_stored){
-  
-  printf("%ld == %ld \n",  TTT_MADC_rev[0], ttts.GetTTT_MADC(0));
-  ttts.Update(TTT_MADC_rev, TTT_V1730_rev);
-  
-  for(int board = 0; board < N_FADC_BOARD; ++board){
-    TTT_V1730_rev[board] = ttts.GetTTT_V1730(board);
-    //      TimeV1730[board] = ttts.GetTimeV1730(board);
-  }
-  for(int i = 0; i  < N_MADC; ++i){
-    TTT_MADC_rev[i] = ttts.GetTTT_MADC(i);
-    TimeMADC[i] = ttts.GetTimeMADC(i);
-  }
-  
-  tree->Fill();
-  evt_stored=false;
-}
-*/
+
 
 file->cd();
 tree->AutoSave();
