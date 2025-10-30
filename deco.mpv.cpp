@@ -19,7 +19,7 @@
 
 #include "segidlist.h"
 #include "MyclassDict.cpp"
-
+#include "DigitalFilter.cpp"
 
 using namespace std;
 
@@ -44,6 +44,7 @@ using namespace std;
 // v1190 config
 #define N_V1190 2
 #define V1190_CH 128
+const int trigger_index = 255;
 
 
 //SIS3820 config
@@ -283,7 +284,7 @@ const int V1190_total_ch = N_V1190 * V1190_CH;
 vector<vector<int>> TDC(V1190_total_ch,vector<int>(1,0));
 uint32_t TTT_V1190[N_V1190];
 uint32_t V1190hit[V1190_total_ch];
-
+Int_t TDC_sub_Trig[V1190_total_ch];
 // Trigger time tags for event matching 2021/06/2
 uint64_t TTT_V1730_rev[N_FADC_BOARD];
 
@@ -323,11 +324,6 @@ int MPV_evtn[N_MPV] ;
 // Scaler
 uint32_t SIS3820_scaler[SIS3820_CH];
 
-
-//MADC
-//TH2D* adc = new TH2D("adc","adc",16,16,32,2048,108,8300);
-//TH2D* adc = new TH2D("adc","adc",16,16,32,2048,0,8192);
-#include "DigitalFilter.cpp"
 
 
 void stop_dataread(int sig){
@@ -500,6 +496,7 @@ int main(int argc, char *argv[]){
   char bnam[100];
   //v1190
   tree->Branch("TDC","std::vector<std::vector<int>>",&TDC);
+  tree->Branch("TDC_sub",TDC_sub_Trig,Form("TDC_sub_Trig[%d]/I",V1190_total_ch));
   sprintf(bnam,"TTT_V1190/i");
   tree->Branch("TTT_V1190",&TTT_V1190,bnam);
   tree->Branch("V1190hit",V1190hit,Form("V1190hit[%d]/I",V1190_total_ch));
@@ -548,12 +545,11 @@ int main(int argc, char *argv[]){
   
   //MPV
   tree->Branch("MPV_TS",MPV_TS,Form("MPV_TS[%d]/l",N_MPV));
-  
-  
+
   for(int i=0;i<N_FADC_BOARD;++i) tree->Branch(Form("rawdata_%d",i),"std::vector<std::vector<uint16_t>>",&fadc_raw_data[i]);
   //for(int i=0;i<N_FADC_BOARD;++i) tree->Branch(Form("data_fil_%d",i),"std::vector<std::vector<double>>",&data_fil[i]);
   
-  
+  /** SET HISTOGRAM **/
   for(int i=0;i<N_FADC_BOARD;i++){
     for(int j=0;j<N_CH;j++){
       sprintf(hnam,"wf%d_%02d",i,j);
@@ -570,6 +566,7 @@ int main(int argc, char *argv[]){
     MADCvsCH[i] = new TH2D(Form("madc%d",i),Form("madc%d vs ch",i),32,0,32,8192,0,8192);
   }
 
+  // SAKRA pid histogram
   TH2D* pid_1st[16];
   for(int i=0; i<16; i++){
     pid_1st[i] = new TH2D(Form("hpid_1st_ch%d", i), Form("Amax vs Energy ch%d", i),
@@ -639,7 +636,10 @@ int main(int argc, char *argv[]){
 for(int i=0;i<V1190_total_ch;++i) TDC[i].clear();
 // for(int i=0;i<V1190_total_ch;++i) TDC[i].assign(1, -1e6); ;
 for (int i = 0; i < N_V1190; i++)TTT_V1190[i]=0;
-for(int i=0;i<V1190_total_ch;++i) V1190hit[i]=0;
+for(int i=0;i<V1190_total_ch;++i) {
+  V1190hit[i]=0;
+  TDC_sub_Trig[i] = -1e6;
+}
 
 // MADC
 for(int i=0;i<N_MADC;++i){
@@ -797,6 +797,22 @@ switch(seg_id.Module){
       }
     }
     // tdc analysis
+    if (trigger_index < 0 || trigger_index >= V1190_total_ch) {
+      printf("Invalid trigger_index %d\n", trigger_index);
+    } else if (TDC[trigger_index].empty()) {
+      printf("Trigger channel %d has no data in evtn=%d\n", trigger_index, evtn);
+    } else {
+      int Trigger_timeing = TDC[trigger_index].at(0);
+      for (int ch = 0; ch < V1190_total_ch; ++ch) {
+        if (V1190hit[ch] == 1 && !TDC[ch].empty()) {
+          int TDC_tmp = 0;
+          TDC_tmp = TDC[ch].at(0);
+          TDC_sub_Trig[ch] = TDC_tmp - Trigger_timeing;
+        } else {
+          // skipp
+        }
+      }
+    }
     
   }
   break;

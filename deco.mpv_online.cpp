@@ -611,17 +611,20 @@ int main(int argc, char *argv[]){
     case RIDF_EAEF_BLOCK:
     ++blkn;
     DB(printf("EF Block Header / blkn=%d\n",blkn));
-    break;
+    // break;
+    continue;
     case RIDF_END_BLOCK:
     DB(printf("EF Block Ender / blkn=%d\n",blkn));
     fin.read((char*)&buf_size, sizeof(buf_size));
     DB(printf("Size of this block=%d\n",buf_size));
-    break;
+    // break;
+    continue;
     case RIDF_BLOCK_NUMBER:
       DB(printf("EF Block Number / blkn=%d\n",blkn));
       fin.read((char*)&buf_size, sizeof(buf_size));
       DB(printf("The Number of this block=%d\n",buf_size));
-      break;
+      // break;
+      continue;
     case RIDF_EVENT:
     case RIDF_EVENT_TS:
       if(evt_stored){
@@ -737,7 +740,8 @@ if(evtn%1000==0){
   printf("\rAnalyzing Event Number: %d",evtn);
   fflush(stdout);
 }
-break;
+// break;
+continue;
 case RIDF_SEGMENT:
 fin.read((char*)&buf_segid, sizeof(buf_segid));
 seg_id.Revision=(buf_segid & 0xFC000000) >> 26;
@@ -1000,7 +1004,8 @@ switch(seg_id.Module){
   break;
   
 }
-break;
+// break;
+continue;
 
 
 case RIDF_SCALER: // and RIDF_NCSCALER
@@ -1054,16 +1059,19 @@ else{
   DB(printf("Scaler ID =%d\n",scrid));
   memcpy(scaler,buff,4*32);
 }
-break;
+// break;
+continue;
 case RIDF_TIMESTAMP:
 segdatasize=blksize-sizeof(buf_header)/2;
 fin.read((char*)buff, segdatasize*2);
 DB(printf("Timestamp Hearder / blkn=%d\n",blkn));
-break;
+// break;
+continue;
 default:
 printf("Error: RIDF Class ID:%d is invalid.\n",cid);
 printf("Block Number=%d\n",blkn);
-break;
+// break;
+continue;
 }
 
 if(quit_flag) break;
