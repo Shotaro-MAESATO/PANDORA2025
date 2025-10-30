@@ -602,6 +602,18 @@ int main(int argc, char *argv[]){
   // while(!fin.eof()){
   while(!gSystem->ProcessEvents()){
     fin.read((char*)buf_header, sizeof(buf_header));
+    size_t bytes_read = fin.gcount();
+    if (bytes_read < sizeof(buf_header)) {
+        std::cerr << "Header incomplete (" << bytes_read << "/" 
+                  << sizeof(buf_header) << " bytes). Waiting 10s..." << std::endl;
+
+        fin.clear(); 
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+
+        fin.seekg(-static_cast<std::streamoff>(bytes_read), std::ios::cur);
+
+        continue; 
+    }
     cid= (buf_header[0] & 0x0FC00000) >> 22;
     blksize= buf_header[0] & 0x003FFFFF; //2 byte
     DB(cout << "cid=" << cid << endl);
@@ -898,7 +910,7 @@ switch(seg_id.Module){
     cout << "TTT_MADC : "<< TTT_MADC[board] <<endl;
   }
   else {
-    printf("Invalid sig pattern (MADC): sig=%d, blkn=%d evtn=%d\n", sig, blkn, evtn);
+    printf(" pattern (MADC): sig=%d, blkn=%d evtn=%d\n", sig, blkn, evtn);
   }
   break;
   
@@ -933,7 +945,7 @@ switch(seg_id.Module){
       fadc_raw_data[board][ch].emplace_back(buff[bp] & 0x00003FFF);
       fadc_raw_data[board][ch].emplace_back((buff[bp++] & 0x3FFF0000)>>16);
       
-      if(200<i&&i<300) baseline_ave[board][ch]+=((double)fadc_raw_data[board][ch][i])/100.0;
+      if(200<=i&&i<300) baseline_ave[board][ch]+=((double)fadc_raw_data[board][ch][i])/100.0;
     }
     
     data_bsub.clear();
@@ -1079,7 +1091,6 @@ if(quit_flag) break;
 }
 
 cout << endl;
-/*
 if(evt_stored){
   
   printf("%ld == %ld \n",  TTT_MADC_rev[0], ttts.GetTTT_MADC(0));
@@ -1097,7 +1108,7 @@ if(evt_stored){
   tree->Fill();
   evt_stored=false;
 }
-*/
+
 
 file->cd();
 tree->AutoSave();

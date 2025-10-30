@@ -888,7 +888,7 @@ switch(seg_id.Module){
       fadc_raw_data[board][ch].emplace_back(buff[bp] & 0x00003FFF);
       fadc_raw_data[board][ch].emplace_back((buff[bp++] & 0x3FFF0000)>>16);
       
-      if(200<i&&i<300) baseline_ave[board][ch]+=((double)fadc_raw_data[board][ch][i])/100.0;
+      if(200=<i&&i<300) baseline_ave[board][ch]+=((double)fadc_raw_data[board][ch][i])/100.0;
     }
     
     data_bsub.clear();
