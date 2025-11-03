@@ -608,7 +608,7 @@ int main(int argc, char *argv[]){
                   << sizeof(buf_header) << " bytes). Waiting 10s..." << std::endl;
 
         fin.clear(); 
-        std::this_thread::sleep_for(std::chrono::seconds(10));
+        std::this_thread::sleep_for(std::chrono::seconds(60));
 
         fin.seekg(-static_cast<std::streamoff>(bytes_read), std::ios::cur);
 
