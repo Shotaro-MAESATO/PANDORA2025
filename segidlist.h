@@ -118,6 +118,7 @@
 #define V775      21
 #define V785      21
 #define V792      21
+#define V7XX      21
 #define V550      22
 #define V767      23
 #define V1190     24

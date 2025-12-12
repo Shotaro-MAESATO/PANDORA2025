@@ -20,7 +20,7 @@ void DrawSiHist(){
             cout<<"not found: "<<hname[i]<<endl;
             continue;
         }
-        h->Draw("colz");
+        h->Draw();
         gPad->SetLogz();    
     }
     c->Update();
