@@ -17,9 +17,11 @@
 #include <TTree.h>
 #include <TH2D.h>
 
+#include "DaqConfig.h"
 #include "segidlist.h"
 #include "MyclassDict.cpp"
 #include "DigitalFilter.cpp"
+// #include "DetMap.hpp"
 
 using namespace std;
 
@@ -31,27 +33,12 @@ using namespace std;
 #define DB(x)
 #endif
 
-// DAQ SETUP
-//v1730 config
-#define N_FADC_BOARD 5
-#define RECORD_LENGTH 800
-#define N_CH 16
-
-//MADC config
-#define N_MADC 6
-#define MADC_CH 32
-
 // v1190 config
-#define N_V1190 2
-#define V1190_CH 128
 const int trigger_index = 255;
 
-
-//SIS3820 config
-#define SIS3820_CH 32
-
-// MPV Config
-#define N_MPV 2
+// For V7XX QDC
+const int LiqScinAllCh = 16;
+const int LiqScinTailCh = 17;
 
 
 enum RIDF_CID{
@@ -99,37 +86,37 @@ public:
         //std::cout << board << " " << ch << " " << par0 << " " << par1 <<  std::endl;
         fParameters.push_back(std::make_pair(Address(board, ch), std::make_pair(par0, par1)));
         if(board > board_max)
-    board_max = board;
-  if(ch > ch_max)
-    ch_max = ch;
+        board_max = board;
+        if(ch > ch_max)
+        ch_max = ch;
       }
       
-// std::cout << "Bmax, chmax " << board_max << " " << ch_max <<std::endl;
+      // std::cout << "Bmax, chmax " << board_max << " " << ch_max <<std::endl;
       
       //Make paramater array :  To improve access speeed in GetPar(). Sequential O(N) -> Random O(1)
       if(_optimize){
-  fParameterArray = std::vector<std::vector<par_type>>(board_max + 1);
-  for(auto &board : fParameterArray){
-    board.resize(ch_max + 1);
-    for(auto & par: board){
-      par = std::make_pair(0,0);
-    }
-  }
-  
-  //  std::cout << " a " << fParameterArray.size()  << " " <<  fParameterArray.at(0).size()  <<std::endl;
-  for(int iBoard = 0; iBoard < board_max + 1; ++iBoard){
-    for(int iCh = 0; iCh < ch_max + 1; ++iCh){
-      try{
-        auto par = GetPar(iBoard, iCh);
-        // std::cout << iBoard << " " << iCh << " " << par.first << " " << par.second << std::endl;
-        fParameterArray.at(iBoard).at(iCh) = par;
-      }
-      catch(...){
-        continue;
-      }
-    }
-  }
-  fIsOptimized = true;
+        fParameterArray = std::vector<std::vector<par_type>>(board_max + 1);
+        for(auto &board : fParameterArray){
+          board.resize(ch_max + 1);
+          for(auto & par: board){
+            par = std::make_pair(0,0);
+          }
+        }
+        
+        //  std::cout << " a " << fParameterArray.size()  << " " <<  fParameterArray.at(0).size()  <<std::endl;
+        for(int iBoard = 0; iBoard < board_max + 1; ++iBoard){
+          for(int iCh = 0; iCh < ch_max + 1; ++iCh){
+            try{
+              auto par = GetPar(iBoard, iCh);
+              // std::cout << iBoard << " " << iCh << " " << par.first << " " << par.second << std::endl;
+              fParameterArray.at(iBoard).at(iCh) = par;
+            }
+            catch(...){
+              continue;
+            }
+          }
+        }
+        fIsOptimized = true;
       } 
     }
   };
@@ -151,16 +138,15 @@ public:
     else{//if(fIsOptimized = false){
       auto it = std::find_if(fParameters.begin(),
       fParameters.end(),
-           [&](const std::pair<Address, par_type> &_par)->bool{
+      [&](const std::pair<Address, par_type> &_par)->bool{
         return _par.first == Address(_board_id, _ch);
-           });
+      });
       if(it != fParameters.end())
       {
         return it->second;
       }
       throw std::out_of_range("Invalid access to CalibPar : board = " + std::to_string(_board_id) + " ch = " +std::to_string(_ch));
     }
-    
     
   }
   
@@ -207,6 +193,10 @@ std::string GetParameterFileForRunNo(int _run_no){
   std::string GetParameterFile2ForRunNo(int _run_no){
     return "param/energy/MADC.prm";
   }
+
+std::string GetParameterFile3ForRunNo(int _run_no){
+  return "param/energy/FADCcor.prm";
+}
 
   //Get Run No from RIDF path
 int ExtractRunNo(const std::string& _ridf_path){
@@ -255,7 +245,8 @@ typedef struct{
     char comment[200];
 } RunInfo;
 
-int nch[N_FADC_BOARD]={16,16,16,16,16};
+
+int nch[N_FADC_BOARD];
 uint32_t v1730_header[4];
 uint32_t v1730_ch_header;
 uint64_t trigger_time_tag[N_FADC_BOARD];
@@ -275,6 +266,7 @@ int sum[N_FADC_BOARD][N_CH];
 int ADC[N_FADC_BOARD][N_CH];
 double ADC_cor[N_FADC_BOARD][N_CH];
 double Energy[N_FADC_BOARD][N_CH];
+double Energy_cor[N_FADC_BOARD][N_CH];
 int PeakClk[N_FADC_BOARD][N_CH];
 int RiseEdge[N_FADC_BOARD][N_CH];
 int ADC_sum[N_FADC_BOARD][N_CH];
@@ -282,9 +274,10 @@ int adc_sum[N_FADC_BOARD][N_CH];
 
 const int V1190_total_ch = N_V1190 * V1190_CH;
 vector<vector<int>> TDC(V1190_total_ch,vector<int>(1,0));
+vector<vector<double>> TDC_sub_Trig(V1190_total_ch,vector<double>(1,0));
 uint32_t TTT_V1190[N_V1190];
 uint32_t V1190hit[V1190_total_ch];
-Int_t TDC_sub_Trig[V1190_total_ch];
+// Int_t TDC_sub_Trig[V1190_total_ch];
 // Trigger time tags for event matching 2021/06/2
 uint64_t TTT_V1730_rev[N_FADC_BOARD];
 
@@ -311,7 +304,8 @@ TFile* file;
 TTree* tree;
 TH2D* waveform[N_FADC_BOARD][N_CH];
 TH2D *energy[N_FADC_BOARD];
-TH2D* ADC_ch;                //20240703
+TH2D* ADC_ch;                
+TH2D* ADCCor_ch;             //20240703
 
 double Amax[N_FADC_BOARD][N_CH];
 //MPV
@@ -324,7 +318,8 @@ int MPV_evtn[N_MPV] ;
 // Scaler
 uint32_t SIS3820_scaler[SIS3820_CH];
 
-
+// V7XX
+int raw_V7XX[N_V7XX][V7XX_CH];
 
 void stop_dataread(int sig){
   quit_flag=true;
@@ -432,8 +427,10 @@ int main(int argc, char *argv[]){
   struct timeval sT_filter,eT_filter,dT_filter;
   struct timeval tempT;
   int filter_cnt=0;
-  
-  int FADC_hit[N_FADC_BOARD]={};
+
+  // FADC
+  for(int i=0;i<N_FADC_BOARD;++i) nch[i] = N_CH;
+  // int FADC_hit[N_FADC_BOARD]={};
   
   // vector<future<int>> threadpool;
   int bp=0;
@@ -464,6 +461,8 @@ int main(int argc, char *argv[]){
   std::cout << GetParameterFileForRunNo(ExtractRunNo(argv[1])) << std::endl;
   CalibPar calibpar2(GetParameterFile2ForRunNo(ExtractRunNo(argv[1])), true);
   std::cout << GetParameterFile2ForRunNo(ExtractRunNo(argv[1])) << std::endl;
+  CalibPar calibpar3(GetParameterFile3ForRunNo(ExtractRunNo(argv[1])), true);
+  std::cout << GetParameterFile3ForRunNo(ExtractRunNo(argv[1])) << std::endl;
   ifstream fin(argv[1], ios::in|ios::binary);
   
   if(!fin.is_open()){
@@ -474,7 +473,9 @@ int main(int argc, char *argv[]){
   string fsca_name;
   
   buff = new uint32_t[0x800000];
-  
+
+  // FADC Resize
+  for(int i=0;i<N_FADC_BOARD;++i) nch[i] = N_CH;
   for(int i=0;i<N_FADC_BOARD;++i){
     fadc_raw_data[i].resize(N_CH);
     data_fil[i].resize(N_CH);
@@ -495,8 +496,8 @@ int main(int argc, char *argv[]){
   */
   char bnam[100];
   //v1190
-  tree->Branch("TDC","std::vector<std::vector<int>>",&TDC);
-  tree->Branch("TDC_sub",TDC_sub_Trig,Form("TDC_sub_Trig[%d]/I",V1190_total_ch));
+  tree->Branch("rawtdc","std::vector<std::vector<int>>",&TDC);
+  tree->Branch("TDC","std::vector<std::vector<double>>",&TDC_sub_Trig);
   sprintf(bnam,"TTT_V1190/i");
   tree->Branch("TTT_V1190",&TTT_V1190,bnam);
   tree->Branch("V1190hit",V1190hit,Form("V1190hit[%d]/I",V1190_total_ch));
@@ -518,6 +519,8 @@ int main(int argc, char *argv[]){
   tree->Branch("ADC_cor",ADC_cor,bnam);
   sprintf(bnam,"Energy[%d][%d]/D",N_FADC_BOARD,N_CH);
   tree->Branch("Energy",Energy,bnam);
+  sprintf(bnam,"Energy_cor[%d][%d]/D",N_FADC_BOARD,N_CH);
+  tree->Branch("Energy_cor",Energy_cor,bnam);
   sprintf(bnam,"PeakClk[%d][%d]/I",N_FADC_BOARD,N_CH);
   tree->Branch("PeakClk",PeakClk,bnam);
   //  sprintf(bnam,"RiseEdge[%d][%d]/I",N_FADC_BOARD,N_CH);
@@ -542,14 +545,22 @@ int main(int argc, char *argv[]){
   // Scaler
   sprintf(bnam,"SIS3820_scaler[%d]/i",SIS3820_CH);
   tree->Branch("SIS3820_scaler",SIS3820_scaler,bnam);
-  
+
+  // V7XX
+  if (!N_V7XX==0){
+    sprintf(bnam,"rawV7XX[%d][%d]/I",N_V7XX,V7XX_CH);
+    tree->Branch("rawV7XX",raw_V7XX,bnam);
+  }
   //MPV
   tree->Branch("MPV_TS",MPV_TS,Form("MPV_TS[%d]/l",N_MPV));
 
   for(int i=0;i<N_FADC_BOARD;++i) tree->Branch(Form("rawdata_%d",i),"std::vector<std::vector<uint16_t>>",&fadc_raw_data[i]);
-  //for(int i=0;i<N_FADC_BOARD;++i) tree->Branch(Form("data_fil_%d",i),"std::vector<std::vector<double>>",&data_fil[i]);
+  //for(int i=0;i<N_FADC_BOARD;++i) tree->Branch(Form("data_fir_%d",i),"std::vector<std::vector<double>>",&data_fil[i]);
   
-  /** SET HISTOGRAM **/
+  /***********************************************************
+  * SET HISTOGRAM Default
+  ************************************************************/
+
   for(int i=0;i<N_FADC_BOARD;i++){
     for(int j=0;j<N_CH;j++){
       sprintf(hnam,"wf%d_%02d",i,j);
@@ -558,15 +569,34 @@ int main(int argc, char *argv[]){
   }
   int fadc_ch_all;
   fadc_ch_all = N_FADC_BOARD * N_CH;
-  ADC_ch = new TH2D("fadc","FADC vs ch",fadc_ch_all,0,fadc_ch_all,1024,0,16384); //20240703s
-  
+  ADC_ch = new TH2D("fadc","FADC vs ch",fadc_ch_all,0,fadc_ch_all,1024,0,16384);
+  ADCCor_ch = new TH2D("fadc_cor","FADC_cor vs ch",fadc_ch_all,0,fadc_ch_all,1024,0,16384);
+  TH2D* EnergyFadcVsCh = new TH2D("EnergyFadc","EnergyFadc vs Ch", fadc_ch_all, 0, fadc_ch_all, 1000, 0, 20);
+  TH2D* EnergyFadcCorVsCh = new TH2D("EnergyFadcCor", "EnergyFadcCor vs Ch", fadc_ch_all, 0, fadc_ch_all, 1000, 0, 20);
+
   //MADC
+  int MadcChAll;
+  MadcChAll = N_MADC * MADC_CH;
   TH2D* MADCvsCH[N_MADC];
   for (int i = 0; i < N_MADC; i++){
-    MADCvsCH[i] = new TH2D(Form("madc%d",i),Form("madc%d vs ch",i),32,0,32,8192,0,8192);
+    //    if ( N_MADC ==1 ) MADCvsCH[i] = new TH2D("madc","madc vs ch",32,0,32,8192,0,8192); // 8K Resolution
+    if ( N_MADC ==1 ) MADCvsCH[i] = new TH2D("madc","madc vs ch",32,0,32,2048,0,8192); // 8K Resolution
+    else{
+      MADCvsCH[i] = new TH2D(Form("madc%d",i),Form("madc%d vs ch",i),32,0,32,2048,0,8192);  // 8K Resolution
+    }
   }
-
-  // SAKRA pid histogram
+  // TH2D *MadcVsCh = new TH2D ("madc", "Madc vs Ch", MadcChAll, 0, MadcChAll, 2048, 0, 8192);
+  TH2D *EnergyMadcVsCh = new TH2D ("EnergyMadc", "EnergyMadc vs Ch", MadcChAll, 0, MadcChAll, 1000, 0, 20);
+  
+  // V7XX ADC and QDC
+  TH2D* V7XXvsCH[N_V7XX];
+  for (int i = 0; i < N_V7XX; i++){
+    if (i==0) V7XXvsCH[i] = new TH2D("adc",Form("ADC:V7XX%d vs ch",i),32,0,32,1024,0,4096);
+    if (i==1) V7XXvsCH[i] = new TH2D("qdc",Form("QDC:V7XX%d vs ch",i),32,0,32,1024,0,4096);
+  }
+  
+  /************************ Histogram For PID **************************/
+  // SAKRA PSD histogram
   TH2D* pid_1st[16];
   for(int i=0; i<16; i++){
     pid_1st[i] = new TH2D(Form("hpid_1st_ch%d", i), Form("Amax vs Energy ch%d", i),
@@ -574,7 +604,13 @@ int main(int argc, char *argv[]){
     pid_1st[i]->SetDrawOption("colz");
     //serv->Register("pid_1st", pid_1st[i]);
   }
+
+  // E deltaE
+  TH2D* EdeltaE = new TH2D("EdE","E vs deltaE",512, 0, 10, 512, 0, 10);
   
+  TH2D* ngamma = new TH2D("ngamma","Liq Scin: Tail vs All",512,0,4096,512,0,4096);
+  
+  /*******************************************************************/
   
   TrigTimeTags ttts;
   while(!fin.eof()){
@@ -601,44 +637,69 @@ int main(int argc, char *argv[]){
       break;
     case RIDF_EVENT:
     case RIDF_EVENT_TS:
-      if(evt_stored){
-  // for(auto &th : threadpool) th.get();
-  // threadpool.clear();
-  /*
-    if(evtn%100!=0){
-    for(int i=0;i<N_FADC_BOARD;++i){
-    for(int j=0;j<N_CH;++j) fadc_raw_data[i][j].clear();
-    }
-    }
-  */
-  ttts.Update(TTT_MADC_rev, TTT_V1730_rev);
-  
-  for(int board = 0; board < N_FADC_BOARD; ++board){
-    TTT_V1730_rev[board] = ttts.GetTTT_V1730(board);
-    //    TimeV1730[board] = ttts.GetTimeV1730(board);
-    //    std::cout << ttts.GetTimeV1730(board)<<std::endl;;
-  }
-  
-  // time-mes
-  gettimeofday(&sT_fill,NULL);
-  tree->Fill();
-  gettimeofday(&eT_fill,NULL);
-  timersub(&eT_fill,&sT_fill,&tempT);
-  timeradd(&dT_fill,&tempT,&dT_fill);
-  
-  for(Int_t i=0;i< N_MADC;++i) TTT_MADC_pre[i]=TTT_MADC[i];
-  for(Int_t i=0;i<N_FADC_BOARD;++i)
-  trigger_time_tag_pre[i]=trigger_time_tag[i];
-  
-  evt_stored=false;
+    if(evt_stored){
+      // for(auto &th : threadpool) th.get();
+      // threadpool.clear();
+      /*
+      if(evtn%100!=0){
+      for(int i=0;i<N_FADC_BOARD;++i){
+      for(int j=0;j<N_CH;++j) fadc_raw_data[i][j].clear();
+      }
+      }
+      */
+      ttts.Update(TTT_MADC_rev, TTT_V1730_rev);
+      
+      for(int board = 0; board < N_FADC_BOARD; ++board){
+        TTT_V1730_rev[board] = ttts.GetTTT_V1730(board);
+        //    TimeV1730[board] = ttts.GetTimeV1730(board);
+        //    std::cout << ttts.GetTimeV1730(board)<<std::endl;;
+      }
+      // tdc analysis
+      if (trigger_index < 0 || trigger_index >= V1190_total_ch) {
+        printf("Invalid trigger_index %d\n", trigger_index);
+      } else if (TDC[trigger_index].empty()) {
+        cout << endl;
+        printf("Trigger channel %d has no data in evtn=%d\n", trigger_index, evtn);
+      } else {
+        int Trigger_timeing = TDC[trigger_index].at(0);
+        for (int ch = 0; ch < V1190_total_ch; ++ch) {
+          if ( !TDC[ch].empty()) {
+            for (int i = 0; i < V1190hit[ch]; ++i) {
+              int TDC_tmp = 0;
+              double TDCsub_tmp = 0.;
+              TDC_tmp = TDC[ch].at(i);
+              TDCsub_tmp = static_cast<double>(TDC_tmp - Trigger_timeing);
+              TDC_sub_Trig[ch].push_back(TDCsub_tmp * 0.1); // ns unit
+            }
+          } else {
+            // skipp
+          }
+        }
+      }
+      
+      // time-mes
+      gettimeofday(&sT_fill,NULL);
+      tree->Fill();
+      gettimeofday(&eT_fill,NULL);
+      timersub(&eT_fill,&sT_fill,&tempT);
+      timeradd(&dT_fill,&tempT,&dT_fill);
+      
+      for(Int_t i=0;i< N_MADC;++i) TTT_MADC_pre[i]=TTT_MADC[i];
+      for(Int_t i=0;i<N_FADC_BOARD;++i)
+      trigger_time_tag_pre[i]=trigger_time_tag[i];
+      
+      evt_stored=false;
 }
 /***************** Data initialization *****************/
-for(int i=0;i<V1190_total_ch;++i) TDC[i].clear();
+for(int i=0;i<V1190_total_ch;++i){
+  TDC[i].clear();
+  TDC_sub_Trig[i].clear();
+}
+
 // for(int i=0;i<V1190_total_ch;++i) TDC[i].assign(1, -1e6); ;
 for (int i = 0; i < N_V1190; i++)TTT_V1190[i]=0;
 for(int i=0;i<V1190_total_ch;++i) {
   V1190hit[i]=0;
-  TDC_sub_Trig[i] = -1e6;
 }
 
 // MADC
@@ -658,11 +719,18 @@ for(int i=0;i<SIS3820_CH;++i) SIS3820_scaler[i]=0;
 
 // MPV
 for (int i = 0; i < N_MPV; i++){
-  MPV_TS[N_MPV] = 0;
-  high16[N_MPV] = 0 ;
-  low32[N_MPV] = 0 ;
-  MPV_10kclk[N_MPV] = 0;
-  MPV_evtn[N_MPV] = 0;
+  MPV_TS[i] = 0;
+  high16[i] = 0 ;
+  low32[i] = 0 ;
+  MPV_10kclk[i] = 0;
+  MPV_evtn[i] = 0;
+}
+
+// V7XX
+for(int i=0;i<N_V7XX;++i){
+  for(int j=0;j<V7XX_CH;++j){
+    raw_V7XX[i][j]=-1024;
+  }
 }
 
 
@@ -672,6 +740,7 @@ for(int board=0;board<N_FADC_BOARD;++board){
     ADC_cor[board][ch]=-1e6;
     baseline_ave[board][ch]=0;
     Energy[board][ch]=-1;
+    Energy_cor[board][ch]=-1;
     PeakClk[board][ch]=-1;
     RiseEdge[board][ch]=-1;
     fadc_raw_data[board][ch].clear();
@@ -687,7 +756,7 @@ for(int board=0;board<N_FADC_BOARD;++board){
   //  TimeV1730_pre[board]=TimeV1730[board];
   //  TimeV1730[board]=0;
   trigger_time_tag[board]=0;
-  FADC_hit[board]=0;
+  // FADC_hit[board]=0;
 }
 
 for(int board=0;board<N_FADC_BOARD;++board){TTT_V1730_rev[board] = 0;
@@ -727,6 +796,7 @@ seg_id.FP=(buf_segid & 0x000FC000) >> 14;
 seg_id.Detector=(buf_segid & 0x3F00) >> 8;
 seg_id.Module=(buf_segid & 0x00FF);
 board=seg_id.Detector;
+
 /*
 if((blksize-(sizeof(buf_header)+sizeof(buf_segid))/2)==0){
 //  printf("\nError: Event_N:%d, board:%d has no Segment fadc_raw_data\n",evtn,board);
@@ -746,6 +816,7 @@ switch(seg_id.Module){
   uint32_t tmpbuf;
   int evtcnt,geo;
   int error_flag;
+  // cout << "hoge0" << endl;
   while(bp<datasize){
     int ch;
     int tmp_ch;
@@ -776,7 +847,7 @@ switch(seg_id.Module){
             printf("V1190 TDC %d : Error flag 0x%x\n",i,error_flag);
           }
           if((tmpbuf>>27)==0x0){ /** TDC fadc_raw_data **/
-            tmp_ch=(tmpbuf&0x03F80000)>>19;
+            tmp_ch= ((tmpbuf>>19) & 0x7F);
             ch = tmp_ch + board * V1190_CH;
             TDC[ch].push_back(tmpbuf&0x0007FFF);
             V1190hit[ch]+=1;
@@ -796,24 +867,6 @@ switch(seg_id.Module){
         TTT_V1190[board]=TTT_V1190[board]|(tmpbuf&0x1F);
       }
     }
-    // tdc analysis
-    if (trigger_index < 0 || trigger_index >= V1190_total_ch) {
-      printf("Invalid trigger_index %d\n", trigger_index);
-    } else if (TDC[trigger_index].empty()) {
-      printf("Trigger channel %d has no data in evtn=%d\n", trigger_index, evtn);
-    } else {
-      int Trigger_timeing = TDC[trigger_index].at(0);
-      for (int ch = 0; ch < V1190_total_ch; ++ch) {
-        if (V1190hit[ch] == 1 && !TDC[ch].empty()) {
-          int TDC_tmp = 0;
-          TDC_tmp = TDC[ch].at(0);
-          TDC_sub_Trig[ch] = TDC_tmp - Trigger_timeing;
-        } else {
-          // skipp
-        }
-      }
-    }
-    
   }
   break;
   
@@ -828,72 +881,46 @@ switch(seg_id.Module){
       int subheader;
       subheader=(buff[i]&0x00800000)>>23;
       if(sig!=0){
-      // printf("Invalid Data word (MADC) : blkn=%d evtn=%d word=%d\n",blkn,evtn,i);
-	if(sig==3){
-	  // cout << "This Word is Ender" <<endl;
-	  int correct_nword = i;
-	  nword = correct_nword;
-	  break;
-	}
+        printf("Invalid Data word (MADC) : blkn=%d evtn=%d word=%d\n",blkn,evtn,i);
+        if(sig==3){
+          cout << "This Word is Ender" <<endl;
+          int correct_nword = i;
+          nword = correct_nword;
+          break;
+        }
       }
       if(subheader==0){
+        if (buff[i] == 0) continue; // skip zero padding
         int ch=((buff[i]>>16) & 0x1F);
         MADC[board][ch]=(buff[i]&0x1FFF);
         if((buff[i]>>14) & 0x1){
           MADC[board][ch]=-1;
         }
-
+        
         MADCvsCH[board]->Fill(ch,MADC[board][ch]);
         Energy_MADC[board][ch]=(GetSlope(calibpar2, board, ch)*MADC[board][ch])+GetInterSection(calibpar2, board, ch);
+        EnergyMadcVsCh->Fill(board * MADC_CH + ch, Energy_MADC[board][ch]);
       }
       else if(subheader==1){
-        Extended_TS[board] = (uint64_t)((buff[i]&0xffff)<<30);
+        //Extended_TS[board] = (uint64_t)((buff[i]&0xffff)<<30);
+        uint16_t high16 = buff[i] & 0xFFFF;
+        Extended_TS[board] = ((uint64_t)high16) << 30;
       }
     }
     sig=buff[nword]>>30;
     if(sig!=3){
       cout << "MADC Board Number: " << board << endl;
-    printf("Invalid End of Event mark (MADC) : blkn=%d evtn=%d\n",blkn,evtn);
-    cout << "----------------------------------------" <<endl;
-    }
-
-    MADC_TS[board]=(buff[nword]&0x3FFFFFFF);
-    TTT_MADC[board]= Extended_TS[board] | MADC_TS[board];
-
-  }
-
-  // Extended time Stamp enable to decode when Invalid Header come
-  else if(sig==0){
-    printf("Invalid Event Header (MADC) : blkn=%d evtn=%d\n",blkn,evtn);
-    int k = 0;
-    while(sig == 0){
-      int ch=((buff[k]>>16) & 0x1F);
-      MADC[board][ch]=(buff[k]&0x1FFF);
-      //      adc->Fill(ch,MADC[ch]);
-      // MADC_hist[ch]->Fill(MADC[ch]);
-      //Energy_MADC[board][ch]=(GetSlope(calibpar2, 0, ch)*MADC[ch])+GetInterSection(calibpar2, 0, ch);
-      if((buff[k]>>14) & 0x1){ //out of renge
-        MADC[board][ch]=-1;
-      }
-      k++;
-      sig=buff[k]>>30;
-    }
-    if(sig==3){
-      cout << "NO Header but problem sloved " <<endl;
-      cout << "loop : "<< k <<endl;
-      cout << "----------------------------------------" <<endl;
-    }
-    else{
       printf("Invalid End of Event mark (MADC) : blkn=%d evtn=%d\n",blkn,evtn);
       cout << "----------------------------------------" <<endl;
+    }else{
+      MADC_TS[board]=(buff[nword]&0x3FFFFFFF);
+      TTT_MADC[board]= Extended_TS[board] | MADC_TS[board];
+      // cout << "Extended_TS: " << Extended_TS[board] << endl;
+      // cout << "MADC_TS: " << MADC_TS[board] << endl;
+      break;
     }
-    TTT_MADC[board]=(buff[k]&0x3FFFFFFF);
-    cout << "TTT_MADC : "<< TTT_MADC[board] <<endl;
   }
-  else {
-    printf("Invalid sig pattern (MADC): sig=%d, blkn=%d evtn=%d\n", sig, blkn, evtn);
-  }
-  break;
+  
   
   case V1730ZLE:
   DB(printf("header0=%x, eventsize=%d\n",buff[0],buff[0] & 0x0FFFFFFF));
@@ -903,7 +930,7 @@ switch(seg_id.Module){
   //TTT_V1730_rev[board] = trigger_time_tag[board];// copy
   bp=4;
   
-  if(datasize!=4+16*2) FADC_hit[board]=1;
+  // if(datasize!=4+16*2) FADC_hit[board]=1;
   
   for(int ch=0;ch<nch[board];++ch){
     baseline[board][ch]=(buff[bp] & 0x3FFF0000) >> 16;
@@ -940,34 +967,37 @@ switch(seg_id.Module){
       }
     }
     
-    ADC_ch->Fill(16*board+ch,ADC[board][ch]);                         //20240703
     sum[board][ch]=accumulate(data_bsub.begin(),data_bsub.end(),0);
     if(sum[board][ch]<=0) continue;
     
-    // data_fil[board][ch]=FIR_filter(data_bsub,LPF_f15_N401_par); // noise filter
+    data_fil[board][ch]=FIR_filter(data_bsub,LPF_f15_N401_par); // noise filter
     // comment out shaping filter for a while 2021/06/25 22:27 M. Murata
     // data_fil[board][ch]=shaping_filter(data_fil[board][ch],3); // shaper
     
     for(int i=0;i<(int)fadc_raw_data[board][ch].size();i++){
       if(fadc_raw_data[board][ch][i]==0) continue;
       waveform[board][ch]->Fill(i,fadc_raw_data[board][ch][i],1.);
-      //ADC_cor[board][ch]=max(ADC_cor[board][ch],data_fil[board][ch][i]);
+      ADC_cor[board][ch]=max(ADC_cor[board][ch],data_fil[board][ch][i]);
     }
+    ADC_ch->Fill(16*board+ch,ADC[board][ch]);                        
+    ADCCor_ch->Fill(16*board+ch,ADC_cor[board][ch]);                 
     //pid parameter
     if(use_Amax){
       data_tra[board][ch] = trapezoidal(data_bsub, 20, 0);
       double max_amax = *std::max_element(data_tra[board][ch].begin(), data_tra[board][ch].end());
       double min_amax = *std::min_element(data_tra[board][ch].begin(), data_tra[board][ch].end());
       double diff_amax = std::abs(max_amax - min_amax);
-      if(ADC[board][ch]!=0) Amax[board][ch] = diff_amax / ADC[board][ch];  
-      // if(ADC[board][ch]!=0) Amax[board][ch] = diff_amax / ADC_cor[board][ch];  
+      // if(ADC[board][ch]!=0) Amax[board][ch] = diff_amax / ADC[board][ch];  
+      if(ADC[board][ch]!=0) Amax[board][ch] = diff_amax / ADC_cor[board][ch];  
     }else{
       Amax[board][ch] = -1;
     }
     
-    // Energy[board][ch]=(GetSlope(calibpar, board, ch)*ADC_cor[board][ch])+GetInterSection(calibpar, board, ch);
+    Energy_cor[board][ch]=(GetSlope(calibpar3, board, ch)*ADC_cor[board][ch])+GetInterSection(calibpar3, board, ch);
     Energy[board][ch]=(GetSlope(calibpar, board, ch)*ADC[board][ch])+GetInterSection(calibpar, board, ch);
-    if(board==0) pid_1st[ch]->Fill(Energy[board][ch], Amax[board][ch]);
+    EnergyFadcVsCh->Fill(board * N_CH + ch, Energy[board][ch]);
+    EnergyFadcCorVsCh->Fill(board * N_CH + ch, Energy_cor[board][ch]);
+    if(board==0) pid_1st[ch]->Fill(Energy_cor[board][ch], Amax[board][ch]);
     for(int i=0;i<(int)fadc_raw_data[board][ch].size();i++){
       if(fadc_raw_data[board][ch][i]==0) continue;
       if(0.20*ADC[board][ch]<fadc_raw_data[board][ch][i]){
@@ -994,6 +1024,35 @@ switch(seg_id.Module){
   MPV_TS[board] = high16[board] | low32[board];
   MPV_10kclk[board] = buff[2];
   MPV_evtn[board] = buff[3];
+  break;
+
+  case V7XX:
+  DB(printf("V7XX fadc_raw_data\n"));
+  int identify_type;
+  int ich;
+  bp=0;
+  for(int bp=0; bp<datasize; bp++){
+    identify_type = (buff[bp] & 0x06000000);
+    if(identify_type == 0x2000000){ // header
+      uint32_t event_count = (buff[bp] & 0x00FFFFFF);
+      DB(printf("V7XX Event Header : %d\n", event_count));
+    } else if(identify_type == 0x0000000){  // data
+      ich = ((buff[bp]&0x001f0000) >> 16);
+      raw_V7XX[board][ich] = (buff[bp] & 0x1fff);
+      V7XXvsCH[board]->Fill(ich,raw_V7XX[board][ich]);
+      //cout << "V7XX Board: " << board << " Ch: " << ich << " ADC: " << raw_V7XX[board][ich] << endl;
+    } else if(identify_type == 0x4000000){  // trailer
+      //uint32_t data_length = (buff[bp] & 0x00FFFFFF);
+      DB(printf("V7XX End Of Block : %d\n", data_length));
+    } else {
+      cout << endl;
+      printf("V7XX Unknown data type : 0x%08x\n", buff[bp]);
+      cout << "Event Number: " << evtn << " | Board: " << board << endl;
+      bp = datasize; // break
+      break;
+    }
+    if (board == 1) ngamma->Fill(raw_V7XX[1][LiqScinAllCh],raw_V7XX[1][LiqScinTailCh]);
+  }
   break;
   
 }
@@ -1073,23 +1132,49 @@ cout << endl;
 file->cd();
 tree->AutoSave();
 
+/*********************************
+* Write All Histogram
+********************************** */
+TDirectory *HomeDir = gDirectory;
+TDirectory *WaveformDir = HomeDir->mkdir("waveform");
 
+// FADC
+WaveformDir->cd();
 for(int i=0;i<N_FADC_BOARD;i++){
   for(int j=0;j<N_CH;j++){
     waveform[i][j]->Write();
   }
 }
-
-
+HomeDir->cd();
 ADC_ch->Write();
+ADCCor_ch->Write();
+EnergyFadcVsCh->Write();
+EnergyFadcCorVsCh->Write();
+
 
 //MADC
+EnergyMadcVsCh->Write();
 for(int i=0;i<N_MADC;i++){
   MADCvsCH[i]->Write();
 }
+
+//V7XX
+// for(int i=0;i<N_V7XX;i++){
+//   V7XXvsCH[i]->Write();
+// }
+
+/*****************************
+*  PID histogram
+*********************/
+TDirectory* PidDir = HomeDir->mkdir("pid");
+PidDir->cd();
 for (int i = 0; i < 16; ++i) {
   pid_1st[i]->Write(); 
 }
+// EdeltaE->Write();
+// ngamma->Write();
+HomeDir->cd();
+
 tree->Write();
 file->Close();
 
@@ -1113,4 +1198,8 @@ if(quit_flag) printf("\nQuit \n");
   printf("filter           : %f times/evt\n",(double)filter_cnt/evtn);
   
   return 0;
+}
+
+void SiliconMapping(){
+
 }
